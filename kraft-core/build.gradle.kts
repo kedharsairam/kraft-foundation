@@ -2,6 +2,8 @@ plugins {
     id("com.android.library")
 }
 
+group = "com.kraft"
+
 android {
     namespace = "com.kraft.core"
     compileSdk = 37

@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+group = "com.kraft"
+
 android {
     namespace = "com.kraft.ui"
     compileSdk = 37
