@@ -38,4 +38,5 @@ dependencies {
     api("androidx.compose.material:material-icons-core")
     api("androidx.compose.material:material-icons-extended")
     api("androidx.activity:activity-compose:1.13.0")
+    api("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 }
