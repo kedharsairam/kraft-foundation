@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -95,12 +94,16 @@ fun ShimmerList(
         end = Offset(sweepOffset * 400f + 400f, 0f),
     )
 
-    LazyColumn(
+    // Deliberately a Column, NOT a LazyColumn: skeleton row count is small and
+    // fixed, and a lazy list here gets measured with infinite height whenever
+    // this component is nested inside another scrollable (LazyColumn item,
+    // verticalScroll column) — which crashes at measure time. A plain Column
+    // wraps content and is safe in any parent.
+    Column(
         verticalArrangement = Arrangement.spacedBy(KraftSpacing.Spacing8),
         modifier = modifier.semantics { this.contentDescription = contentDescription },
-        userScrollEnabled = false,
     ) {
-        items(rows) {
+        repeat(rows) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
