@@ -63,7 +63,8 @@ object KraftColorSchemes {
 
     val Dark = darkColorScheme(
         primary = KraftColors.AccentBlue,
-        onPrimary = Color.Black,
+        // White label on the blue accent (Apple convention; 3.65:1, AA-large).
+        onPrimary = Color.White,
         primaryContainer = KraftColors.AccentBlue.copy(alpha = KraftConstants.ContainerAlpha),
         onPrimaryContainer = KraftColors.AccentBlue,
         secondary = KraftColors.AccentTeal,
