@@ -128,7 +128,14 @@ fun KraftTabBar(
                     else KraftColors.TabBarInactive,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+                    // A label with no glyph above it sits low against the icon row: the icon box
+                    // is KraftIconSize.TabBar and the cap height of labelSmall is shorter, so the
+                    // optical centre of the pair is off. This is not spacing in the sense the
+                    // rhythm governs — it is a correction to one glyph's ascender against another,
+                    // and it would be wrong anywhere the label appears without the icon. The waiver
+                    // is same-line because a marker on the line above would be ambiguous: which
+                    // rule, and how far above?
+                    modifier = Modifier.padding(top = 2.dp), // @kraft-lint-ignore spacing.no-raw-dp — optical baseline alignment
                 )
             }
         }
