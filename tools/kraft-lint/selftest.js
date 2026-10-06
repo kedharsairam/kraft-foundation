@@ -255,6 +255,41 @@ function run() {
       '',
     ].join('\n')
   );
+  // KDoc inside a source file is documentation too. gitakraft's GitaMetrics.kt explains why it
+  // was written instead of five separate waivers, and the sentence doing the explaining
+  // contained the marker with nothing after it — so the file was reported as holding three
+  // malformed waivers.
+  fs.writeFileSync(
+    path.join(mixed, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'Doc.kt'),
+    [
+      'package com.x.y',
+      '',
+      '/**',
+      ' * Each of these was a `@kraft-lint-ignore` waiver before this file existed.',
+      ' * A doc comment cannot waive anything.',
+      ' */',
+      'object Metrics {',
+      '    val Pill = 340.dp // @kraft-lint-ignore spacing.no-raw-dp — a metric, not spacing',
+      '}',
+      '',
+    ].join('\n')
+  );
+  const kdocRun = lint([mixed, '--format', 'json']);
+  let kdocJson = { findings: [], waived: [] };
+  try { kdocJson = JSON.parse(kdocRun.out); } catch { /* reported below */ }
+  const kdocMalformed = kdocJson.findings.filter((f) => String(f.rule).startsWith('waiver.'));
+  kdocMalformed.length === 0
+    ? ok('prose in KDoc is not read as a waiver')
+    : bad(`${kdocMalformed.length} spurious waiver.malformed from KDoc: ${JSON.stringify(kdocMalformed.map((m) => m.line))}`);
+  // Scoped to Doc.kt: this fixture directory also holds Thing.kt, whose two waivers were
+  // asserted separately below.
+  const kdocWaived = kdocJson.waived.filter(
+    (f) => f.rule === 'spacing.no-raw-dp' && f.file.endsWith('Doc.kt')
+  );
+  kdocWaived.length === 1
+    ? ok('a real waiver beside KDoc is still honoured')
+    : bad(`expected the one real waiver to be honoured, got ${kdocWaived.length}`);
+
   const mixedRun = lint([mixed, '--format', 'json']);
   let mixedJson = { findings: [], waived: [] };
   try { mixedJson = JSON.parse(mixedRun.out); } catch { /* reported below */ }
@@ -263,7 +298,9 @@ function run() {
     ? ok('no false waiver.malformed in a file a whole-file rule also reads')
     : bad(`${malformed.length} spurious waiver.malformed finding(s): ${JSON.stringify(malformed.map((m) => m.line))}`);
 
-  const waivedHere = mixedJson.waived.filter((f) => f.rule === 'spacing.no-raw-dp');
+  const waivedHere = mixedJson.waived.filter(
+    (f) => f.rule === 'spacing.no-raw-dp' && f.file.endsWith('Thing.kt')
+  );
   waivedHere.length === 2
     ? ok(`both waivers honoured (got ${waivedHere.length})`)
     : bad(`expected 2 waived dp findings, got ${waivedHere.length}: ${JSON.stringify(mixedJson.waived.map((w) => w.rule))}`);

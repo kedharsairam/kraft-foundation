@@ -245,7 +245,13 @@ function run(appDir, standard) {
       // the marker with no rule id after it — "every @kraft-lint-ignore in the diff carries a
       // reason" is a sentence, not a broken waiver — so scanning prose reported four documents
       // and standard.json itself as malformed. Prose cannot waive anything.
+      //
+      // The same applies to KDoc inside a source file. gitakraft's new GitaMetrics.kt explains
+      // why it was written instead of using five waivers, and the sentence explaining that
+      // contained the marker with nothing after it, so the file was reported as holding three
+      // broken waivers. A doc comment is documentation whatever file it lives in.
       const mayWaive = isSource(r);
+      const isDocLine = (l) => /^\s*(\*|\/\*)/.test(l);
 
       const lines = text.split('\n');
 
@@ -259,7 +265,8 @@ function run(appDir, standard) {
       // it can never match, so every file containing a waiver was reported as a malformed
       // one. The first waiver added to KraftTabBar.kt turned the file that justifies the
       // waiver into a finding against it.
-      const lineWaivers = lines.map((l) => (mayWaive ? waiversOn(l) : { rules: new Set(), problems: [] }));
+      const lineWaivers = lines.map((l) =>
+        mayWaive && !isDocLine(l) ? waiversOn(l) : { rules: new Set(), problems: [] });
       const waiverAt = (lineNo) => {
         const w = lineWaivers[lineNo - 1];
         return w && w.rules.has(impl.id) ? lines[lineNo - 1] : null;
