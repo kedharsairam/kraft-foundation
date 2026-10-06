@@ -409,6 +409,7 @@ const docs = [
   {
     id: 'docs.standards-present',
     docs: true,
+    perFile: true,
     appliesTo: (r) => /(^|\/)README\.md$/.test(r),
     check: ({ text }) => {
       if (/kraft-foundation|kraft-ui/i.test(text)) return [];
