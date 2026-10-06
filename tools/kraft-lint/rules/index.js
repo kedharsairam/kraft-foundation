@@ -115,7 +115,13 @@ const spacing = [
   },
   {
     id: 'type.no-raw-sp',
-    exempt: (r) => isDefinition(r),
+    // A file that constructs a Typography is where type values are defined, wherever it lives.
+    // Same principle as the colour exemption: langkraft keeps its scale in ui/Theme.kt rather
+    // than ui/theme/, and the path-based exemption reported 14 findings in the file that
+    // defines the app's type. A file calling Typography( *is* the type definition.
+    exempt: (r, text) =>
+      isDefinition(r) ||
+      (typeof text === 'string' && /\bTypography\s*\(/.test(text)),
     check: ({ raw }) => literals(raw, 'sp').map((l) => ({
       message: `${l.text} is a raw sp value. Type comes from KraftTypeScale via MaterialTheme.typography.`,
     })),

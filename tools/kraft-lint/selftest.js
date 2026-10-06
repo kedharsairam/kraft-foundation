@@ -532,6 +532,26 @@ function run() {
     ? ok('the same literal twice in a screen is still 2 findings')
     : bad(`expected 2 findings for a repeated literal in a screen, got ${inScreen.length}`);
 
+  // The same principle for type: a file that constructs a Typography is where type values
+  // are defined. langkraft keeps its scale in ui/Theme.kt rather than ui/theme/, and the
+  // path-based exemption reported 14 findings in the file that defines the app's type.
+  const typeRun = (files) => {
+    const d = mk(files);
+    const { standard } = loadStandard(null);
+    const res = run(d, standard);
+    fs.rmSync(d, { recursive: true, force: true });
+    return res.findings.filter((f) => f.rule === 'type.no-raw-sp');
+  };
+  const TYPE_DEF = 'package com.x.y\n\nprivate val XType = Typography(\n    displayLarge = TextStyle(fontSize = 34.sp),\n)\n';
+  typeRun({ 'app/src/main/java/com/x/y/ui/Theme.kt': TYPE_DEF }).length === 0
+    ? ok('a type definition outside ui/theme/ has no sp findings')
+    : bad('a type definition outside ui/theme/ was reported');
+  typeRun({
+    'app/src/main/java/com/x/y/ui/Screen.kt': 'package com.x.y\n\nText("x", fontSize = 17.sp)\n',
+  }).length === 1
+    ? ok('a raw sp in a screen is still a finding')
+    : bad('a raw sp in a screen was not reported');
+
   // A removal directive is not a request — tools:node="remove" strips a permission a
   // library's manifest merged in. And a justification may sit above a sibling element,
   // lines away from the uses-permission it covers. englishkraft's manifest does both at
