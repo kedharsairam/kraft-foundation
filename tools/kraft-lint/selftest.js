@@ -353,7 +353,12 @@ function run() {
   // non-zero exit for a command that worked. Everyone reads a long report through head or grep.
   process.stdout.write('\nclosed pipe\n');
   try {
-    execFileSync('sh', ['-c', `${JSON.stringify(bin)} ${JSON.stringify(noisy)} | head -3`],
+    // bash with pipefail, not sh. A plain `cmd | head` reports *head's* exit status, so a
+    // linter that dies mid-write still looks like success — which is precisely what happened
+    // to the first version of this test: removing the EPIPE handler changed nothing here,
+    // because the test was reading the wrong process's verdict.
+    execFileSync('bash', ['-c',
+      `set -o pipefail; ${JSON.stringify(bin)} ${JSON.stringify(noisy)} | head -3`],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     ok('piping into head does not crash the linter');
   } catch (e) {
