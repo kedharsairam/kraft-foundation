@@ -50,7 +50,10 @@ object KraftColors {
     val SurfaceSecondary = Color(0xFF2C2C2E)
     val SurfaceTertiary = Color(0xFF3A3A3C)
 
-    /** Search bar background — slightly lighter than page for depth. */
+    /**
+     * Search bar background. Generic: a search field that sits above the page needs to be
+     * distinguishable from it, whatever the app is searching.
+     */
     val SearchBar = Color(0xFF1C1C1E)
 
     /**
@@ -84,7 +87,15 @@ object KraftColors {
     val ChipSelectedContainer = AuroraBlue.copy(alpha = 0.2f)
     val ChipSelectedLabel = AuroraBlue
 
-    /** Glance widget background — near-black, slightly lifted for depth. */
+    /**
+     * Widget background — near-black, slightly lifted for depth.
+     *
+     * This one was borderline and is staying deliberately. A widget is an app feature, but a
+     * Kraft widget that did not look like a Kraft app would be worse than no shared value at
+     * all, so the background is a shared decision even though the widget is not. That is the
+     * test this file applies: would an app delete this without consequence? For a search cache,
+     * yes. For a widget background, no.
+     */
     val WidgetBackground = Color(0xFF1A1A1A)
 }
 
@@ -185,29 +196,45 @@ object KraftTypeScale {
     val LabelSpacing = 0.4.sp
 }
 
-/** Centralized tuning constants — every magic number lives here. */
+/**
+ * Centralised tuning constants — every magic number lives here.
+ *
+ * Scope boundary, enforced by rule `build.library-no-app-logic`
+ * -------------------------------------------------------
+ * This object is the reason the foundation was distrusted. It was extracted from wallkraft in
+ * September 2026 and the extraction carried wallkraft's concerns with it: a search cache, an
+ * API rate limit, a browse grid's prefetch tuning, an image decode ceiling, a widget colour.
+ * Those are wallkraft's decisions, and once they sit here every app that adopts this library
+ * inherits them — and the next app that needs a token finds the precedent and adds another.
+ *
+ * What may live here is a *generic primitive* that any app would have chosen the same way:
+ * overlay alphas, elevation, spring and shimmer values, and plain HTTP defaults.
+ *
+ * Removed on that basis, and they now live in wallkraft:
+ *
+ *     SearchCacheTtlMs, SearchCacheMaxEntries    wallkraft's search result cache
+ *     RateLimitCooldownMs                         Wallhaven's documented rate limit
+ *     GridPrefetchAhead/Threshold/DebounceMs     wallkraft's browse grid
+ *     MaxDecodeDim                                wallkraft's wallpaper decode ceiling
+ *
+ * If you find yourself adding a constant here that one app could delete without consequence,
+ * it does not belong here. WidgetBackground stayed, and the comment on it says why: a widget
+ * is an app feature, but a Kraft widget that did not look like a Kraft app would be worse
+ * than no shared value at all.
+ */
 object KraftConstants {
-    // -- Caching --
-    const val SearchCacheTtlMs = 30 * 60 * 1000L
-    const val SearchCacheMaxEntries = 100
-
     // -- Network --
+    // Generic HTTP defaults. App-specific limits — a provider's rate limit, a paging size —
+    // belong to the app that knows them.
     const val RetryMax = 3
     const val RetryBackoffBaseMs = 1000L
     const val CallTimeoutSec = 30L
     const val ConnectTimeoutSec = 15L
     const val ReadTimeoutSec = 15L
-    const val RateLimitCooldownMs = 60_000L
 
     // -- UI --
     const val ContainerAlpha = 0.2f
-    const val GridPrefetchAhead = 4
-    const val GridPrefetchThreshold = 20
-    const val GridPrefetchDebounceMs = 150L
     const val MinRefreshMs = 500L
-
-    // -- Decode --
-    const val MaxDecodeDim = 4096
 
     // -- Overlay alphas --
     const val OverlayScrimAlpha = 0.55f

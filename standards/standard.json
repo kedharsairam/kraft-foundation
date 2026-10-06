@@ -1,0 +1,326 @@
+{
+  "$comment": [
+    "Kraft Standard — machine-readable rules. This file is the enforcement source.",
+    "",
+    "The documents in docs/ explain each rule and cite its id; kraft-lint reads this file and",
+    "fails a build. Neither may drift from the other, and `kraft-lint --selftest` is what proves",
+    "they have not: it fails if a rule here has no prose behind it, and fails if the prose",
+    "describes a rule that is not here.",
+    "",
+    "Why one file and not prose. A checklist nobody runs is a convention. gitakraft declares",
+    "android.permission.INTERNET while its own README says 'Fully offline', and item 15 of the",
+    "checklist has forbidden that since the checklist existed — nothing checked. Prose that",
+    "nothing reads is an aspiration; this is the part that bites.",
+    "",
+    "Why JSON and not YAML. This file is read by a program on every commit in nine",
+    "repositories. A YAML dialect is a dependency on that path, and a dependency that is",
+    "missing or a version apart is a gate that silently stops running. JSON needs no parser in",
+    "any language these repos already use.",
+    "",
+    "Why '$comment' fields are in the file at all: so the reasoning travels with the rules",
+    "instead of living in a document that can fall behind the thing it explains."
+  ],
+
+  "version": "1.0.0",
+  "name": "kraft-standard",
+  "applies_to": "Android apps in the Kraft portfolio",
+
+  "defaults": {
+    "severity": "error",
+    "waiver_marker": "@kraft-lint-ignore",
+    "$comment": "A waiver without a reason is itself a failure, because an unexplained exception is indistinguishable from a bug."
+  },
+
+  "scopes": {
+    "shared": "Identical across every app. No exceptions.",
+    "per-app": "Declared once by the app. May differ by design, and the reason is recorded."
+  },
+
+  "$scopes_rationale": [
+    "pulsekraft's palette carries this comment:",
+    "",
+    "    'KraftTools is instrument-cyan. kraft-ui carries amber. Neither could be reused without",
+    "     the two apps reading as the same product.'",
+    "",
+    "That is a deliberate decision, not drift, and it is correct: a speed test and a barometer",
+    "that look like the same product are confusing. So colour is per-app by design and this",
+    "standard says so explicitly, rather than leaving it to be rediscovered as an inconsistency",
+    "every few months.",
+    "",
+    "Everything that makes two Kraft apps feel like the same body of work — spacing, type,",
+    "radius, motion, touch targets, components, layering, error handling — is shared and",
+    "enforced. What an app is *about* is its own. This is also how Apple works: one design",
+    "language, per-app accent."
+  ],
+
+  "rules": [
+    {
+      "id": "spacing.no-raw-dp",
+      "title": "Raw dp value where a spacing token exists",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "exempt": ["**/Canvas.kt", "**/ui/theme/**"],
+      "rationale": "krafttools has 207 dp literals and kraft-ui zero, and the difference is entirely this rule. Spacing is the strongest signal that two apps came from the same hand, and the one most cheaply lost to a typed number.",
+      "check": "Any <number>.dp in main source is a finding unless the file is exempt or the line carries a waiver with a reason. Values that are component metrics rather than spacing — a 1dp hairline, an icon's 20dp box — are the legitimate minority, and waiving them with a reason is what makes the rule trustworthy."
+    },
+    {
+      "id": "spacing.rhythm",
+      "title": "Spacing value is not on the Kraft scale",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "The 8px rhythm, extended with 1/2/3/4/6/12/20 as half-steps for optical adjustment. 10.dp, 13.dp, 14.dp, 18.dp and 26.dp are not on it — and they are exactly what englishkraft and pulsekraft are full of.",
+      "check": "The literal must be one of 0,1,2,3,4,6,8,12,16,20,24,32,40,48,56,64, or carry a waiver."
+    },
+    {
+      "id": "type.no-raw-sp",
+      "title": "Raw sp value where a type token exists",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "exempt": ["**/ui/theme/**"],
+      "rationale": "barokraft carries 83 per-call `label.copy(fontSize = N.sp)` overrides against kraft-ui's zero. A type scale that can be overridden at the call site is not a scale.",
+      "check": "Any <number>.sp in main source is a finding unless exempt or waived with a reason."
+    },
+    {
+      "id": "type.scale-declared",
+      "title": "App declares no type scale and inherits the Material default",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/Theme.kt", "**/src/main/**/*Theme.kt"],
+      "rationale": "englishkraft and pulsekraft pass stock `Typography()`. They do not look like Kraft apps because they are not using a Kraft type scale at all, and nothing in their build says so.",
+      "check": "The theme composable must pass a Typography built from the shared scale. A bare `Typography()` is a finding."
+    },
+    {
+      "id": "type.m3-wrapper-present",
+      "title": "No MaterialTheme wrapper, so colour and type references silently resolve to defaults",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "barokraft's setContent is `Box(Modifier.fillMaxSize().background(Ink))` with no MaterialTheme. Every `MaterialTheme.colorScheme.*` and `MaterialTheme.typography.*` in that app resolves to Material defaults, so the app is inconsistent with itself and nothing reports it.",
+      "check": "Every Activity's setContent must be wrapped in MaterialTheme."
+    },
+    {
+      "id": "radius.from-token",
+      "title": "Corner radius written inline instead of taken from the scale",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "10.dp, 18.dp, 11.dp, 13.dp and 26.dp appear inline across barokraft, pulsekraft and gitakraft. Warn rather than error at first, because some are deliberate optical exceptions — the finding list is how those get marked deliberate or fixed.",
+      "check": "RoundedCornerShape(<number>.dp) is a finding unless the value is on the scale or waived."
+    },
+    {
+      "id": "colour.per-app-declared",
+      "title": "Colour literal outside the app's declared palette",
+      "scope": "per-app",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "exempt": ["**/ui/theme/**", "**/ui/ColorPicker.kt"],
+      "rationale": "gitakraft's SettingsScreen pastes seven Aurora hexes that the library already exports, and trainkraft hand-copies three status colours out of the library instead of importing them. Both defeat the composite build: a change to the shared palette does not reach them, and nobody finds out until the two drift apart.",
+      "check": "Colour(0x…) outside the theme package must resolve to a name declared in the app's palette file. The shared library's palette is also a permitted source."
+    },
+    {
+      "id": "colour.accent-per-app-allowed",
+      "title": "An app uses a different accent than another — allowed, and required to be declared",
+      "scope": "per-app",
+      "severity": "info",
+      "applies": ["**/ui/theme/**"],
+      "rationale": "The inverse finding. pulsekraft is violet, krafttools is instrument-cyan, gitakraft is saffron. That is a decision, so the gate asks only that it be declared in one place, never that it match a sibling. This rule exists so the divergence is on the record rather than discovered.",
+      "check": "Every app must declare its accent in a single palette object with a comment naming the reason. An accent differing from the portfolio default is reported as information, not a fault."
+    },
+    {
+      "id": "tokens.no-duplicate-palette",
+      "title": "Palette duplicated from another app instead of shared",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "englishkraft and langkraft carry byte-identical 21-value palettes. Copying is not the sin. The sin is that a fix to one never reaches the other and no test can see it.",
+      "check": "Report hex values that also appear in another app in the portfolio. Informational; the remedy is a shared palette, or an intentional divergence with a stated reason."
+    },
+    {
+      "id": "a11y.touch-target",
+      "title": "Interactive element smaller than the minimum touch target",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "Apple's HIG gives 44x44pt as the default control size for iOS and iPadOS. 48dp is Google's Material figure and is not what this portfolio follows. Both are minimums, so the rule is a floor and never a ceiling.",
+      "check": "A clickable element's resolved size must be at least 44dp. Where a platform component supplies more, the more is kept."
+    },
+    {
+      "id": "a11y.reduce-motion",
+      "title": "Animation not gated on the reduce-motion preference",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "Principle 6, Accessible. Motion is a preference, not a default.",
+      "check": "Any animation or transition must be reachable through rememberReduceMotion."
+    },
+    {
+      "id": "a11y.content-description",
+      "title": "Interactive element with no semantic label",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "Principle 6. A control a screen reader cannot name is a control nobody can use.",
+      "check": "Icon-only clickables require contentDescription or a semantics block."
+    },
+
+    {
+      "id": "arch.domain-pure",
+      "title": "Domain layer imports the Android framework",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/domain/**"],
+      "rationale": "ARCHITECTURE.md: domain is pure Kotlin. This is the rule that makes a domain layer testable without Robolectric, which is why barokraft and trainkraft can test theirs and most of the portfolio cannot.",
+      "check": "No android.*, androidx.* or Compose import in a domain source file."
+    },
+    {
+      "id": "arch.layering",
+      "title": "Layer imports something above it",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "PRESENTATION → DOMAIN → DATA. Never the reverse, and never presentation from data.",
+      "check": "Presentation must not be imported by data; domain must import neither."
+    },
+    {
+      "id": "arch.result-not-exception",
+      "title": "Expected failure signalled by throwing",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["**/src/main/**/domain/**"],
+      "rationale": "STANDARDS.md: prefer Result<T> over exceptions for expected failures. kraft-core already provides KraftResult and AppError; the check is that they are actually used.",
+      "check": "Throws of IllegalStateException or IllegalArgumentException on domain paths are findings."
+    },
+    {
+      "id": "arch.no-global-mutable-state",
+      "title": "Mutable state at global scope",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/*.kt"],
+      "rationale": "STANDARDS.md. Predictable state, or there is none.",
+      "check": "A top-level var, or an object holding mutable state, outside a remembered scope."
+    },
+
+    {
+      "id": "privacy.permission-justified",
+      "title": "Permission declared without a stated reason",
+      "scope": "per-app",
+      "severity": "error",
+      "applies": ["**/src/main/AndroidManifest.xml"],
+      "rationale": "The portfolio spans zero to eleven permissions. Every permission an app holds must be one it can name, because the default answer to 'why does this app want location' should be 'it doesn't'.",
+      "check": "Each uses-permission must be accompanied by a comment giving the reason."
+    },
+    {
+      "id": "privacy.no-network-when-offline",
+      "title": "App claims offline but declares the internet permission",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/AndroidManifest.xml", "README.md"],
+      "rationale": "Principle 7. gitakraft currently declares INTERNET and its description says 'Fully offline'. One of the two is wrong and nothing in the build can say which.",
+      "check": "If the README or manifest claims offline operation, INTERNET must not be declared without a comment explaining why it is present."
+    },
+    {
+      "id": "privacy.no-telemetry",
+      "title": "Telemetry or analytics dependency present",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/build.gradle.kts", "**/libs.versions.toml"],
+      "rationale": "MANIFESTO: we do not treat the user's device as a data source.",
+      "check": "No analytics, crash-reporting or advertising SDK in any dependency block. The allow-list is empty by design."
+    },
+    {
+      "id": "privacy.no-hardcoded-secrets",
+      "title": "Secret committed to source",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/*.kt", "**/*.kts", "**/*.properties", "**/*.xml"],
+      "rationale": "Principle 5, Secure. No secrets in source, ever.",
+      "check": "Key-shaped strings, and any password, token or api-key assignment with a non-empty literal value."
+    },
+
+    {
+      "id": "build.uses-shared-library",
+      "title": "App does not consume the shared foundation",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["settings.gradle.kts"],
+      "rationale": "Eight of nine apps defined their own theme while the shared library existed and was used by one. This rule is the whole reason the portfolio looks like one body of work: it makes not-consuming the library a build failure rather than an oversight.",
+      "check": "settings.gradle.kts must includeBuild the foundation with dependencySubstitution."
+    },
+    {
+      "id": "build.library-has-tests",
+      "title": "The shared foundation ships untested code",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["kraft-ui/src/**", "kraft-core/src/**"],
+      "rationale": "The foundation's own rule 3: 'Foundation carries its own tests. Shared code is verified code.' kraft-ui had none, which is a large part of why nobody trusted it enough to adopt. A gate cannot meaningfully police a library that does not police itself.",
+      "check": "Both modules must have a test source set and a non-empty test suite."
+    },
+    {
+      "id": "build.library-no-app-logic",
+      "title": "App-specific constant leaked into the shared library",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["kraft-ui/src/**", "kraft-core/src/**"],
+      "rationale": "The foundation's own rule 4. The tokens currently hold wallkraft's SearchCacheTtlMs, RateLimitCooldownMs, CallTimeoutSec and GridPrefetch — network and search concerns from one app, now load-bearing for every app that adopts the library. The next app that needs a token finds the precedent and adds to it, and the shared layer stops being shared.",
+      "check": "No network, cache, API or widget constant in the foundation. Anything app-shaped must be either genuinely generic or moved out."
+    },
+
+    {
+      "id": "quality.tests-exist",
+      "title": "Domain logic has no tests",
+      "scope": "shared",
+      "severity": "error",
+      "applies": ["**/src/main/**/domain/**"],
+      "rationale": "Principle 10, Testable. kalc has one test file; gitakraft three. The checklist has said 'domain logic has unit tests' throughout, and it is the item most often unmet.",
+      "check": "Every domain package must have a corresponding test package with at least one test."
+    },
+    {
+      "id": "quality.ci-runs-the-gate",
+      "title": "Continuous integration does not run the quality gate",
+      "scope": "shared",
+      "severity": "error",
+      "applies": [".github/workflows/**"],
+      "rationale": "Four apps have no .github directory at all, so nothing about them is verified on any commit. A gate that only runs locally is a gate that runs when you remember.",
+      "check": "At least one workflow must invoke kraft-lint and block on its exit code."
+    },
+    {
+      "id": "quality.ci-runs-tests",
+      "title": "Continuous integration does not run the unit tests",
+      "scope": "shared",
+      "severity": "error",
+      "applies": [".github/workflows/**"],
+      "rationale": "Checklist item 38.",
+      "check": "A workflow must run testDebugUnitTest and block on its exit code."
+    },
+    {
+      "id": "quality.toolchain-uniform",
+      "title": "Build toolchain differs from the portfolio standard",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["**/gradle/wrapper/gradle-wrapper.properties", "**/build.gradle.kts"],
+      "rationale": "Two apps are on Gradle 8.11.1 / AGP 8.9.1 and seven on 9.7.1 / 9.3.1. Not a bug, but the gate must avoid version-sensitive Gradle APIs because of it, and that constraint is worth removing rather than documenting.",
+      "check": "Report the wrapper version and AGP version per app, and flag divergence from the portfolio mode."
+    },
+    {
+      "id": "docs.standards-present",
+      "title": "Repository does not reference the standard it is built to",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["README.md"],
+      "rationale": "A reader arriving at any app should be able to find the standard it claims to follow. At present no app does, and the standards exist only as a reconstruction inside kalc.",
+      "check": "README must link to the foundation and name the version it targets."
+    },
+    {
+      "id": "docs.accessibility-noted",
+      "title": "Accessibility claims absent or overstated",
+      "scope": "shared",
+      "severity": "warn",
+      "applies": ["README.md"],
+      "rationale": "A claim of accessibility that is not implemented is worse than no claim.",
+      "check": "If the README claims accessibility, the a11y rules must pass."
+    }
+  ]
+}
