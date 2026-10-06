@@ -438,6 +438,18 @@ if (require.main === module) {
   // exit() discards whatever has not been flushed — which truncated a 193-finding JSON report
   // at exactly 64KB, the first time anyone piped this tool's output into another program.
   // Setting exitCode lets Node drain the pipe and then terminate with the same status.
+  //
+  // EPIPE is a normal end, not a crash. `kraft-lint . | head` closes the pipe while findings
+  // remain to be written, and Node turns that into an unhandled 'error' event — a stack trace
+  // on stderr and a non-zero exit for a command that did its job. Everyone who reads a long
+  // report pipes it through head or grep.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (e) => {
+      if (e && e.code === 'EPIPE') process.exit(0);
+      throw e;
+    });
+  }
+
   try {
     process.exitCode = main(process.argv);
   } catch (e) {

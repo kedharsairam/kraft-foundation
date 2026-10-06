@@ -348,6 +348,22 @@ function run() {
   } else {
     ok(`all ${expectedFindings} findings survive a pipe (${piped.out.length} bytes of JSON)`);
   }
+  // Piping into something that stops reading must not be a crash. `kraft-lint . | head` closes
+  // the pipe while findings remain, and Node raises an unhandled EPIPE — a stack trace and a
+  // non-zero exit for a command that worked. Everyone reads a long report through head or grep.
+  process.stdout.write('\nclosed pipe\n');
+  try {
+    execFileSync('sh', ['-c', `${JSON.stringify(bin)} ${JSON.stringify(noisy)} | head -3`],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    ok('piping into head does not crash the linter');
+  } catch (e) {
+    const stderrText = String(e.stderr || '');
+    if (/EPIPE/.test(stderrText)) {
+      bad('piping into head crashes with EPIPE — the consumer closed the pipe early');
+    } else {
+      bad(`piping into head failed unexpectedly: ${stderrText.trim().split('\n')[0] || e.message}`);
+    }
+  }
   fs.rmSync(noisy, { recursive: true, force: true });
 
   fs.rmSync(mixed, { recursive: true, force: true });
