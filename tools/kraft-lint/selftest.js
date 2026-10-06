@@ -552,6 +552,28 @@ function run() {
     ? ok('a raw sp in a screen is still a finding')
     : bad('a raw sp in a screen was not reported');
 
+  // A metrics object is a definition file wherever it lives. langkraft's LangMetrics sits in
+  // ui/ rather than ui/theme/, and the path exemption reported it. The check is narrow on
+  // purpose: an object holding only dp/sp vals. File-private constants outside an object are
+  // still findings — and the first version of this check omitted the object requirement and
+  // exempted any file of bare vals, which the pipe fixture then proved by going quiet.
+  const metricsRun = (files) => {
+    const d = mk(files);
+    const { standard } = loadStandard(null);
+    const res = run(d, standard);
+    fs.rmSync(d, { recursive: true, force: true });
+    return res.findings.filter((f) => f.rule === 'spacing.no-raw-dp');
+  };
+  const METRICS = 'package com.x.y\n\nimport androidx.compose.ui.unit.dp\n\nobject XMetrics {\n    val CardMaxWidth = 640.dp\n}\n';
+  metricsRun({ 'app/src/main/java/com/x/y/ui/Metrics.kt': METRICS }).length === 0
+    ? ok('a metrics object outside ui/theme/ has no dp findings')
+    : bad('a metrics object outside ui/theme/ was reported');
+  metricsRun({
+    'app/src/main/java/com/x/y/ui/Screen.kt': 'package com.x.y\n\nimport androidx.compose.ui.unit.dp\n\nval cardMaxWidth = 640.dp\n',
+  }).length === 1
+    ? ok('a file-private dp constant is still a finding')
+    : bad('a file-private dp constant was exempted as a metrics file');
+
   // A removal directive is not a request — tools:node="remove" strips a permission a
   // library's manifest merged in. And a justification may sit above a sibling element,
   // lines away from the uses-permission it covers. englishkraft's manifest does both at

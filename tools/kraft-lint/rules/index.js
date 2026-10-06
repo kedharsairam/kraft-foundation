@@ -31,6 +31,27 @@ const IS_DEFINITION = /\/ui\/(theme|tokens)\//;
 const isDefinition = (r) => IS_DEFINITION.test(r) || /KraftTokens\.kt$/.test(r);
 
 /**
+ * A file whose content *is* the numbers — an object holding only dp/sp vals and the comments
+ * explaining them. gitakraft's GitaMetrics and langkraft's LangMetrics are both this shape,
+ * but only the first sits under ui/theme/, so the path exemption caught one and reported the
+ * other. Asking what the file contains rather than where it lives catches both, and any
+ * future metrics file wherever an app puts it.
+ *
+ * Deliberately narrow: an `object` holding only dp/sp vals, no composables, no functions. A
+ * screen that happens to declare file-private constants does not qualify — top-level vals
+ * outside an object are exactly what the rule should flag, since they should reference
+ * tokens rather than restate numbers. The first version of this check omitted the object
+ * requirement and exempted any file of bare vals, which is most fixtures and some screens.
+ */
+function isMetricsFile(text) {
+  if (/@Composable|\bfun\s+\w/.test(text)) return false;
+  if (!/\bobject\s+\w+/.test(text)) return false;
+  const vals = [...text.matchAll(/^\s*(?:private\s+|public\s+|internal\s+)?val\s+\w+\s*=\s*(.+)$/gm)];
+  if (!vals.length) return false;
+  return vals.every(([, v]) => /^[0-9.]+\.(dp|sp)\s*$/.test(v.trim()));
+}
+
+/**
  * Zero is not spacing, it is the absence of spacing, and it has no token to point at.
  *
  * gitakraft's LiquidGlass carried five `0.dp`: a default `elevation: Dp = 0.dp`, a
@@ -95,14 +116,17 @@ const spacing = [
     // dp to pixels for stroke widths and corner radii; there is no spacing token for those
     // and pretending otherwise produces hundreds of false positives, which is how a gate
     // gets switched off.
-    exempt: (r) => isDefinition(r) || /\/ui\/ColorPicker\.kt$/.test(r),
+    exempt: (r, text) =>
+      isDefinition(r) ||
+      /\/ui\/ColorPicker\.kt$/.test(r) ||
+      (typeof text === 'string' && isMetricsFile(text)),
     check: ({ raw }) => literals(raw, 'dp').filter(notAbsent).map((l) => ({
       message: `${l.text} is a raw dp value. Use a KraftSpacing token, or waive it with a reason if it is a component metric rather than spacing.`,
     })),
   },
   {
     id: 'spacing.rhythm',
-    exempt: (r) => isDefinition(r),
+    exempt: (r, text) => isDefinition(r) || (typeof text === 'string' && isMetricsFile(text)),
     check: ({ raw }) => {
       const allowed = new Set([0, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64]);
       return literals(raw, 'dp')
@@ -128,7 +152,7 @@ const spacing = [
   },
   {
     id: 'radius.from-token',
-    exempt: (r) => isDefinition(r),
+    exempt: (r, text) => isDefinition(r) || (typeof text === 'string' && isMetricsFile(text)),
     check: ({ raw }) => {
       // 0 is on the scale and always has been: `RoundedCornerShape(0.dp)` is how you say "no
       // rounding", and a shape is frequently square at one end of a range it animates between.
