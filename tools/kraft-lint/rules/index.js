@@ -505,16 +505,27 @@ const build = [
   {
     id: 'build.uses-shared-library',
     appliesTo: () => false,
-    repo: ({ files, rel, add }) => {
-      const settings = files.find((f) => /(^|\/)settings\.gradle(\.kts)?$/.test(rel(f)));
+    repo: ({ files, rel, readText, add }) => {
+      // The app's settings file, not just any settings file. The gate walks the whole tree it
+      // is pointed at, and when that tree holds the app beside its foundation checkout, the
+      // foundation's own settings.gradle.kts is in the walk too. find() returned whichever
+      // came first in directory order — the foundation's — which has no includeBuild, so an
+      // app that consumed the foundation correctly was reported as not consuming it.
+      // langkraft's first CI run failed on exactly this: 170 milliseconds, two findings,
+      // both wrong.
+      const settings =
+        files.find((f) => rel(f) === 'settings.gradle.kts' || rel(f) === 'settings.gradle') ||
+        files.find((f) => /(^|\/)settings\.gradle(\.kts)?$/.test(rel(f)));
       if (!settings) return [];
       let text = '';
-      try { text = fs.readFileSync(settings, 'utf8'); } catch { return []; }
+      try { text = readText(settings); } catch { return []; }
+      if (!text) return [];
       if (/includeBuild\s*\(/.test(text) && /kraft-foundation|kraft-ui/.test(text)) return [];
       // The foundation cannot consume itself. Its own settings file has no includeBuild, and
       // reporting that made the standard's own repository fail its own gate, which is either
-      // an exemption or a lie, and an exemption is cheaper than a lie.
-      const isFoundation = files.some((f) => rel(f).startsWith('kraft-ui/') && /\.kt$/.test(rel(f)));
+      // an exemption or a lie, and an exemption is cheaper than a lie. Matched at any depth,
+      // because the foundation may be the tree being scanned or a sibling inside it.
+      const isFoundation = files.some((f) => /(^|\/)kraft-(ui|core)\/src\/main\//.test(rel(f)));
       if (isFoundation) return [];
       add('build.uses-shared-library', rel(settings), 0,
         'this app does not consume the shared foundation. That is why it can look like a different product.');

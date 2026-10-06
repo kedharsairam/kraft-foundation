@@ -482,6 +482,28 @@ function run() {
     ? ok('build.uses-shared-library does not fire on the foundation itself')
     : bad('build.uses-shared-library fired on the foundation itself');
 
+  // The app beside its foundation checkout, which is the CI layout: the app at the root and
+  // the foundation as a sibling directory, scanned as one tree. find() used to return
+  // whichever settings.gradle.kts came first in directory order — the foundation's, which
+  // has no includeBuild — so a correctly consuming app was reported as not consuming it.
+  // langkraft's first CI run failed on exactly this: 170 milliseconds, two findings, both
+  // wrong, while the same gate passed locally where no sibling was present.
+  //
+  // The sibling here carries no kraft-ui source, so the foundation-presence exemption does
+  // not apply and the settings choice alone decides. The foundation's files come FIRST,
+  // because that is the order that triggers the bug: directory order put
+  // kraft-foundation/settings.gradle.kts before the app's own. Listing the app's settings
+  // first would pass with the bug still present — verified by reverting, which this probe
+  // then catches.
+  const sharedSibling = runRepo('build.uses-shared-library', {
+    'kraft-foundation/settings.gradle.kts': 'rootProject.name = "kraft-foundation"\n',
+    'kraft-foundation/standards/standard.json': '{}\n',
+    'settings.gradle.kts': 'rootProject.name = "x"\nincludeBuild("../kraft-foundation")\n',
+  });
+  sharedSibling && sharedSibling.length === 0
+    ? ok('build.uses-shared-library reads the app settings, not the sibling foundation')
+    : bad(`build.uses-shared-library fired with a foundation sibling present: ${JSON.stringify(sharedSibling.map((f) => f.file))}`);
+
   // Only meaningful where the foundation's modules actually are. Hard-coding the module names
   // made this fire on all nine apps — a finding no app can fix.
   const libQuiet = runRepo('build.library-has-tests', { 'app/src/main/java/com/x/y/A.kt': 'class A\n' });
