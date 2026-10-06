@@ -532,6 +532,50 @@ function run() {
     ? ok('the same literal twice in a screen is still 2 findings')
     : bad(`expected 2 findings for a repeated literal in a screen, got ${inScreen.length}`);
 
+  // A removal directive is not a request — tools:node="remove" strips a permission a
+  // library's manifest merged in. And a justification may sit above a sibling element,
+  // lines away from the uses-permission it covers. englishkraft's manifest does both at
+  // once, and the rule flagged it for having no reason.
+  process.stdout.write('\npermissions, removals, and distant reasons\n');
+  const manifestRun = (body) => {
+    const d = mk({ 'app/src/main/AndroidManifest.xml': body });
+    const { standard } = loadStandard(null);
+    const res = run(d, standard);
+    fs.rmSync(d, { recursive: true, force: true });
+    return res.findings.filter((f) => f.rule === 'privacy.permission-justified');
+  };
+  manifestRun(
+    '<manifest>\n  <uses-permission android:name="android.permission.CAMERA" />\n</manifest>\n'
+  ).length === 1
+    ? ok('an unexplained permission is still a finding')
+    : bad('an unexplained permission was accepted');
+
+  manifestRun(
+    '<manifest>\n  <!-- INTERNET: sync, see https://example.com/why -->\n' +
+    '  <uses-permission android:name="android.permission.INTERNET" />\n</manifest>\n'
+  ).length === 0
+    ? ok('a comment directly above the permission is accepted')
+    : bad('a comment directly above the permission was rejected');
+
+  manifestRun(
+    '<manifest xmlns:tools="http://schemas.android.com/tools">\n' +
+    '  <!-- androidx.core declares this for a receiver this app never registers.\n' +
+    '       Both the declaration and the request are dead weight. -->\n' +
+    '  <permission android:name="com.x.REMOVED" tools:node="remove" />\n' +
+    '  <uses-permission android:name="com.x.REMOVED" tools:node="remove" />\n' +
+    '</manifest>\n'
+  ).length === 0
+    ? ok('a tools:node="remove" directive with a distant reason is accepted')
+    : bad('a removal directive was reported as an unjustified permission');
+
+  manifestRun(
+    '<manifest xmlns:tools="http://schemas.android.com/tools">\n' +
+    '  <uses-permission android:name="com.x.REMOVED" tools:node="remove" />\n' +
+    '</manifest>\n'
+  ).length === 0
+    ? ok('a bare removal directive is not a permission request')
+    : bad('a bare removal directive was reported as an unjustified permission');
+
   // type.scale-declared has to see three different failures and one success, and the success
   // matters most: wallkraft holds its scale in an object and passes `KraftTypography.Typography`,
   // and an earlier version captured only the first segment of that name and reported the one app

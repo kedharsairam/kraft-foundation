@@ -403,10 +403,27 @@ const privacy = [
       const lines = text.split('\n');
       lines.forEach((l, idx) => {
         if (!/uses-permission/.test(l)) return;
-        // The declaration may wrap across lines; look back for a comment.
+
+        // A removal directive is not a request — `tools:node="remove"` strips a permission a
+        // library's manifest merged in. englishkraft's manifest carries one for
+        // DYNAMIC_RECEIVER_NOT_EXPORTED, an androidx.core permission for a receiver the app
+        // never registers. Flagging a removal as an unjustified permission would be the rule
+        // demanding a reason for the absence of a thing.
+        if (/tools:node\s*=\s*"remove"/.test(l)) {
+          // But only if the same element says so on lines a reader can see together. The
+          // declaration may wrap across lines, so check the element's own span rather than
+          // the single line.
+          const span = [l, lines[idx + 1] || '', lines[idx + 2] || ''].join(' ');
+          if (/tools:node\s*=\s*"remove"/.test(span)) return;
+        }
+
+        // The declaration may wrap across lines; look back for a comment. Further back than
+        // feels necessary, because the comment may sit above a sibling element — englishkraft's
+        // justification covers both the <permission> and the <uses-permission>, and the two are
+        // separated by eleven lines of XML.
         let j = idx - 1;
         let reason = null;
-        while (j >= 0 && j > idx - 4) {
+        while (j >= 0 && j > idx - 14) {
           if (/<!--/.test(lines[j])) { reason = lines.slice(j, idx + 1).join(' '); break; }
           j--;
         }
