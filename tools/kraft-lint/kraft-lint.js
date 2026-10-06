@@ -427,11 +427,15 @@ function main(argv) {
 }
 
 if (require.main === module) {
+  // `process.exitCode`, not `process.exit()`. stdout is asynchronous when it is a pipe, and
+  // exit() discards whatever has not been flushed — which truncated a 193-finding JSON report
+  // at exactly 64KB, the first time anyone piped this tool's output into another program.
+  // Setting exitCode lets Node drain the pipe and then terminate with the same status.
   try {
-    process.exit(main(process.argv));
+    process.exitCode = main(process.argv);
   } catch (e) {
     process.stderr.write(red(`kraft-lint crashed: ${e.stack || e.message}\n`));
-    process.exit(2);
+    process.exitCode = 2;
   }
 }
 

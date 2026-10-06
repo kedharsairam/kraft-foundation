@@ -265,6 +265,41 @@ function run() {
   stillFires.length === 1
     ? ok('the unwaived literal on line 8 is still reported')
     : bad(`expected the unwaived 7.dp on line 8 to be reported, got ${JSON.stringify(mixedJson.findings.map((f) => f.rule + ':' + f.line))}`);
+  // Output must survive a pipe. stdout is asynchronous when it is not a TTY, and calling
+  // process.exit() instead of setting exitCode discards the unwritten tail — which truncated a
+  // 193-finding JSON report at exactly 64KB the first time this tool's output was piped into
+  // another program. Silent data loss, and it only happens when someone uses the thing.
+  process.stdout.write('\noutput integrity through a pipe\n');
+  const noisy = fs.mkdtempSync(path.join(os.tmpdir(), 'kraft-lint-noisy-'));
+  fs.mkdirSync(path.join(noisy, 'app', 'src', 'main', 'java', 'com', 'x', 'y'), { recursive: true });
+  fs.mkdirSync(path.join(noisy, 'app', 'src', 'main'), { recursive: true });
+  fs.writeFileSync(path.join(noisy, 'settings.gradle.kts'),
+    'rootProject.name = "fixture"\nincludeBuild("../kraft-foundation")\n');
+  fs.writeFileSync(path.join(noisy, 'app', 'src', 'main', 'AndroidManifest.xml'), '<manifest/>\n');
+  // Comfortably more than one pipe buffer: 400 files x 2 findings.
+  for (let i = 0; i < 400; i++) {
+    fs.writeFileSync(
+      path.join(noisy, 'app', 'src', 'main', 'java', 'com', 'x', 'y', `F${i}.kt`),
+      `package com.x.y\nimport androidx.compose.ui.unit.dp\nval a = 6.dp\nval b = 13.dp\n`
+    );
+  }
+  const piped = lint([noisy, '--format', 'json']);
+  let big = null;
+  try { big = JSON.parse(piped.out); } catch { /* reported below */ }
+  // Three per file, not two: spacing.no-raw-dp fires on both 6.dp and 13.dp, and
+  // spacing.rhythm only on 13.dp because 6 is on the rhythm. An earlier version of this
+  // expectation said 800, on the reasoning "two rules x 400 files", and the run disagreed.
+  const expectedFindings = 400 * 3;
+  if (!big) {
+    bad(`piped JSON did not parse — output was truncated at ${piped.out.length} bytes`);
+  } else if (big.findings.length !== expectedFindings) {
+    bad(`piped JSON lost findings: expected ${expectedFindings}, got ${big.findings.length} ` +
+        `(output ${piped.out.length} bytes — truncation)`);
+  } else {
+    ok(`all ${expectedFindings} findings survive a pipe (${piped.out.length} bytes of JSON)`);
+  }
+  fs.rmSync(noisy, { recursive: true, force: true });
+
   fs.rmSync(mixed, { recursive: true, force: true });
   fs.rmSync(fixture, { recursive: true, force: true });
   fs.rmSync(clean, { recursive: true, force: true });
