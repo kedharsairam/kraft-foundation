@@ -29,6 +29,16 @@ const kt = (r) => /\.kt$/i.test(r);
 // excluded and /ui/tokens/ was forgotten.
 const IS_DEFINITION = /\/ui\/(theme|tokens)\//;
 const isDefinition = (r) => IS_DEFINITION.test(r) || /KraftTokens\.kt$/.test(r);
+
+/**
+ * Zero is not spacing, it is the absence of spacing, and it has no token to point at.
+ *
+ * gitakraft's LiquidGlass carried five `0.dp`: a default `elevation: Dp = 0.dp`, a
+ * `RoundedCornerShape(0.dp)` meaning "rectangle", and a comparison testing whether a shape is
+ * that rectangle. Not one was a spacing decision, and asking for a token for "no padding"
+ * would mean inventing `KraftSpacing.None`.
+ */
+const notAbsent = (l) => l.value !== 0;
 const ktMain = (r) => kt(r) && r.includes('/src/main/');
 
 /** Kotlin string literal, single or double quoted, non-greedy to the closing quote. */
@@ -71,7 +81,7 @@ const spacing = [
     // and pretending otherwise produces hundreds of false positives, which is how a gate
     // gets switched off.
     exempt: (r) => isDefinition(r) || /\/ui\/ColorPicker\.kt$/.test(r),
-    check: ({ raw }) => literals(raw, 'dp').map((l) => ({
+    check: ({ raw }) => literals(raw, 'dp').filter(notAbsent).map((l) => ({
       message: `${l.text} is a raw dp value. Use a KraftSpacing token, or waive it with a reason if it is a component metric rather than spacing.`,
     })),
   },
@@ -81,6 +91,7 @@ const spacing = [
     check: ({ raw }) => {
       const allowed = new Set([0, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 56, 64]);
       return literals(raw, 'dp')
+        .filter(notAbsent)
         .filter((l) => !allowed.has(l.value))
         .map((l) => ({
           message: `${l.text} is not on the 8px rhythm. Allowed: ${[...allowed].join(', ')} dp.`,
