@@ -113,7 +113,7 @@ function walk(dir, out = []) {
 
 // ── Waivers ───────────────────────────────────────────────────────────────────────────────
 
-const WAIVER = /@kraft-lint-ignore\s+([a-z0-9.\-]+)\s*(?:—|--|-)?\s*(.*)$/;
+const WAIVER = /@kraft-lint-ignore\s+([a-z0-9.\-]+(?:\s*,\s*[a-z0-9.\-]+)*)\s*(?:—|--|-)?\s*(.*)$/;
 
 /**
  * Finds waivers on a line and reports any that are malformed.
@@ -133,7 +133,14 @@ function waiversOn(line) {
   }
   let m = WAIVER.exec(line);
   while (m) {
-    rules.add(m[1]);
+    // One marker may waive several rules: `@kraft-lint-ignore spacing.no-raw-dp,
+    // spacing.rhythm — reason`. A single literal routinely fires both rules at once — a value
+    // off the rhythm is always also raw — and requiring two markers for one decision would
+    // double every waiver for no gain. wallkraft's 1.5dp purity border is the case that
+    // forced it: waiving no-raw-dp left the rhythm finding standing on the same literal.
+    for (const id of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+      rules.add(id);
+    }
     const reason = (m[2] || '').trim();
     if (!reason) {
       problems.push({

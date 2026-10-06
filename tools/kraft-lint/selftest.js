@@ -138,6 +138,14 @@ function run() {
     ? ok('an ordinary comment is not mistaken for a waiver')
     : bad('an ordinary comment was parsed as a waiver');
 
+  // One marker may waive several rules. A single off-rhythm literal fires both spacing rules
+  // at once, and wallkraft's 1.5dp purity border proved that one marker per line was not
+  // enough — waiving no-raw-dp left the rhythm finding standing on the same literal.
+  const multi = waiversOn('  x(1.5.dp), // @kraft-lint-ignore spacing.no-raw-dp, spacing.rhythm — purity hint');
+  multi.rules.has('spacing.no-raw-dp') && multi.rules.has('spacing.rhythm') && !multi.problems.length
+    ? ok('a comma-separated waiver covers several rules')
+    : bad(`a multi-rule waiver was not parsed: ${JSON.stringify([...multi.rules])}`);
+
   // ── 3. Docs and standard agree ─────────────────────────────────────────────────────────
   process.stdout.write('\ndocs and standard\n');
   const docPath = path.join(ROOT, 'docs');
