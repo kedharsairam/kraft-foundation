@@ -129,7 +129,21 @@ const spacing = [
   },
   {
     id: 'colour.per-app-declared',
-    exempt: (r) => isDefinition(r) || /\/ui\/ColorPicker\.kt$/.test(r),
+    // A palette is a file that builds a colour scheme, wherever it lives.
+    //
+    // The exemption used to be the path `ui/theme/**`, which is where the foundation and
+    // gitakraft keep theirs. englishkraft and langkraft keep theirs in `ui/Theme.kt`, and the
+    // rule reported 21 and 36 findings in two files that are each a single app's complete
+    // palette — telling an app that had done exactly the right thing that it had not.
+    //
+    // Recognising the construct rather than the location is what the rule actually means.
+    // A file that calls darkColorScheme( or lightColorScheme( *is* the palette; a colour
+    // literal in a screen is not, and still is a finding — gitakraft's SettingsScreen had
+    // seven and keeps all seven.
+    exempt: (r, text) =>
+      isDefinition(r) ||
+      /\/ui\/ColorPicker\.kt$/.test(r) ||
+      (typeof text === 'string' && /\b(?:darkColorScheme|lightColorScheme)\s*\(/.test(text)),
     check: ({ raw }) => {
       const re = new RegExp(`Color\\(0x[0-9A-Fa-f]{8}\\)`, 'g');
       const out = [];

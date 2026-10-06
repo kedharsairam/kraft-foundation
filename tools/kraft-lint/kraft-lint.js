@@ -234,9 +234,13 @@ function run(appDir, standard) {
 
     for (const file of files) {
       const r = rel(file);
-      if (!wants(r) || !appliesTo(r) || isExempt(r)) continue;
+      // Cheap path tests first, then read, then the exemption — because `exempt` may need to
+      // look at the file's contents. Reading before checking applicability would read every
+      // file in the tree including the ones no rule cares about.
+      if (!wants(r) || !appliesTo(r)) continue;
       const text = readText(file);
       if (text === null) continue;
+      if (isExempt(r, text)) continue;
       seenFiles.add(r);
 
       const base = { raw: '', line: '', lineNo: 0, file: r, text, relPath: file, appDir, readText };

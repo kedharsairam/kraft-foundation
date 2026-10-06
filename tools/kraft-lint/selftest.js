@@ -381,7 +381,7 @@ function run() {
   // unconditionally passes a "does it fire" test forever.
   process.stdout.write('\nrepo-scoped rules\n');
   const os2 = require('os');
-  const { readText, walk } = require('./kraft-lint');
+  const { readText, walk, run } = require('./kraft-lint');
 
   // Real directories on disk, not a map of strings. An earlier version of this harness
   // passed `readText: () => null` and a list of paths that did not exist, so three rules that
@@ -485,6 +485,36 @@ function run() {
   libOk && libOk.length === 0
     ? ok('build.library-has-tests accepts a tested kraft-ui')
     : bad('build.library-has-tests fired on a tested kraft-ui');
+
+  // A palette is recognised by building a colour scheme, not by where it lives. englishkraft
+  // and langkraft keep theirs in ui/Theme.kt rather than ui/theme/, and the path-based
+  // exemption reported 21 and 36 findings in the two files that were each a complete palette.
+  process.stdout.write('\na palette is a palette wherever it lives\n');
+  const paletteRun = (files) => {
+    const d = mk(files);
+    const { standard } = loadStandard(null);
+    const res = run(d, standard);
+    fs.rmSync(d, { recursive: true, force: true });
+    return res.findings.filter((f) => f.rule === 'colour.per-app-declared');
+  };
+  const SCHEME = 'package com.x.y\n\nprivate val Scheme = darkColorScheme(\n    primary = Color(0xFF9CCBFF),\n)\n';
+  const inUiTheme = paletteRun({ 'app/src/main/java/com/x/y/ui/theme/Theme.kt': SCHEME });
+  inUiTheme.length === 0
+    ? ok('a palette in ui/theme/ has no colour findings')
+    : bad(`a palette in ui/theme/ produced ${inUiTheme.length} findings`);
+
+  const inUi = paletteRun({ 'app/src/main/java/com/x/y/ui/Theme.kt': SCHEME });
+  inUi.length === 0
+    ? ok('a palette in ui/Theme.kt has no colour findings either')
+    : bad(`a palette outside ui/theme/ produced ${inUi.length} findings — the rule is still path-based`);
+
+  const inScreen = paletteRun({
+    'app/src/main/java/com/x/y/ui/SettingsScreen.kt':
+      'package com.x.y\n\nRow {\n  SettingRow(tint = Color(0xFF30D158))\n  SettingRow(tint = Color(0xFF30D158))\n}\n',
+  });
+  inScreen.length === 2
+    ? ok('the same literal twice in a screen is still 2 findings')
+    : bad(`expected 2 findings for a repeated literal in a screen, got ${inScreen.length}`);
 
   process.stdout.write('\n' + '─'.repeat(64) + '\n');
   process.stdout.write(failures === 0
