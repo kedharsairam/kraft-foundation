@@ -409,13 +409,14 @@ const privacy = [
         // DYNAMIC_RECEIVER_NOT_EXPORTED, an androidx.core permission for a receiver the app
         // never registers. Flagging a removal as an unjustified permission would be the rule
         // demanding a reason for the absence of a thing.
-        if (/tools:node\s*=\s*"remove"/.test(l)) {
-          // But only if the same element says so on lines a reader can see together. The
-          // declaration may wrap across lines, so check the element's own span rather than
-          // the single line.
-          const span = [l, lines[idx + 1] || '', lines[idx + 2] || ''].join(' ');
-          if (/tools:node\s*=\s*"remove"/.test(span)) return;
-        }
+        //
+        // The attribute may sit on the next line — `<uses-permission` opens the element and
+        // `tools:node="remove"` closes it — so the element's own span is checked, not the
+        // single line. An earlier version tested the line first and only then the span, which
+        // meant a wrapped element fell through to the comment search and was reported for
+        // having no reason.
+        const span = [l, lines[idx + 1] || '', lines[idx + 2] || ''].join(' ');
+        if (/tools:node\s*=\s*"remove"/.test(span)) return;
 
         // The declaration may wrap across lines; look back for a comment. Further back than
         // feels necessary, because the comment may sit above a sibling element — englishkraft's
