@@ -98,7 +98,11 @@ const spacing = [
     id: 'radius.from-token',
     exempt: (r) => isDefinition(r),
     check: ({ raw }) => {
-      const allowed = new Set([2.5, 4, 8, 12, 14, 16, 20, 28, 50]);
+      // 0 is on the scale and always has been: `RoundedCornerShape(0.dp)` is how you say "no
+      // rounding", and a shape is frequently square at one end of a range it animates between.
+      // Omitting it produced three findings in gitakraft's LiquidGlass, where a corner that
+      // interpolates to square is named 0.dp.
+      const allowed = new Set([0, 2.5, 4, 8, 12, 14, 16, 20, 28, 50]);
       const re = new RegExp(`RoundedCornerShape\\(([^)]*)\\)`, 'g');
       const out = [];
       let m;
@@ -183,13 +187,36 @@ const architecture = [
   },
   {
     id: 'type.m3-wrapper-present',
-    perFile: true,
-    appliesTo: (r) => ktMain(r) && /MainActivity\.kt$/.test(r),
-    check: ({ raw, line }) => {
-      if (/MaterialTheme\s*\(/.test(raw)) return [];
-      if (/setContent/.test(raw)) {
-        return [{ line, message: 'no MaterialTheme wrapper. Every MaterialTheme.colorScheme and typography reference below this will silently resolve to Material defaults.' }];
-      }
+    appliesTo: () => false,
+    // Asked of the whole app, not of MainActivity.
+    //
+    // The defect is real and it shipped: barokraft has no theme composable anywhere, so every
+    // MaterialTheme.colorScheme and typography reference in it resolves to Material's own
+    // defaults and the app is inconsistent with itself without anything reporting it.
+    //
+    // Two narrower versions of this rule were wrong first. Accepting only the literal name
+    // MaterialTheme( flagged every app that correctly supplies its own theme — which is how
+    // the accent is per-app, and the reason this foundation exists in a per-app scope at all.
+    // Accepting any *Theme( call *in MainActivity* flagged englishkraft and wallkraft, whose
+    // MainActivity calls EnglishKraftApp(...) and applies the theme one frame deeper.
+    // MainActivity is not the only place a wrapper can be entered from, so asking it was
+    // asking the wrong question.
+    //
+    // What is left is the part decidable from source, and the part that actually separates the
+    // one broken app from the eight working ones: does a theme composable exist at all. It
+    // will not catch an app that defines a theme and forgets to call it — which is visible in
+    // review, and a far milder failure than having no theme to call.
+    repo: ({ files, rel, readText, add }) => {
+      const definesTheme = files.some((f) => {
+        if (!/\/src\/main\//.test(rel(f)) || !/\.kt$/i.test(rel(f))) return false;
+        const t = readText(f);
+        return t !== null && /fun\s+[A-Z]\w*Theme\s*\(/.test(t);
+      });
+      if (definesTheme) return [];
+      add('type.m3-wrapper-present', 'app/src/main/', 0,
+        'no theme composable anywhere in main source. Every MaterialTheme.colorScheme and ' +
+        'typography reference in this app resolves to Material defaults, and the app is ' +
+        'inconsistent with itself without reporting it.');
       return [];
     },
   },
@@ -288,7 +315,22 @@ const privacy = [
       const claimsOffline = /\boffline\b/i.test(text) || /\bno network\b/i.test(text);
       const hasInternet = /permission\.INTERNET/.test(text);
       if (claimsOffline && hasInternet) {
-        return [{ message: 'this file claims offline operation and declares INTERNET. One of the two is wrong.' }];
+        // An app may be offline apart from one declared exception. gitakraft is exactly that:
+        // "No accounts. No ads. No tracking. Fully offline. The internet permission exists for
+        // one thing only: an update check you trigger." That is a stronger privacy position
+        // than an app with no INTERNET permission at all, and this rule was calling it a
+        // contradiction.
+        //
+        // Accepted only where the exception is stated — a comment above the permission in the
+        // manifest, or a sentence naming it. Silence is still a finding, because an
+        // unexplained INTERNET permission is the thing worth catching.
+        const declared =
+          /<!--[^>]*(network|internet|update|sync|fetch|download|connect)[^>]*-->/i.test(text) ||
+          /\bpermission exists for\b/i.test(text) ||
+          /\b(offline|no network)[^.]*\bexcept\b[^.]*\./i.test(text) ||
+          /\b(offline|no network)[^.]*\b(one thing only|single|only for)\b/i.test(text);
+        if (declared) return [];
+        return [{ message: 'this file claims offline operation and declares INTERNET with no stated exception. Either drop the permission or say, in this file, what it is for.' }];
       }
       return [];
     },

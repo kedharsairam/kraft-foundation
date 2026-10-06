@@ -69,7 +69,6 @@ function run() {
     { id: 'spacing.rhythm', line: 'Modifier.height(13.dp)', want: /not on the 8px rhythm/ },
     { id: 'type.no-raw-sp', line: 'style.copy(fontSize = 17.sp)', want: /raw sp value/ },
     { id: 'type.scale-declared', line: 'KraftTheme(typography = Typography())', want: /stock Typography/ },
-    { id: 'type.m3-wrapper-present', line: 'setContent { Box(Modifier.fillMaxSize()) }', want: /no MaterialTheme wrapper/ },
     { id: 'radius.from-token', line: 'RoundedCornerShape(18.dp)', want: /not on the radius scale/ },
     { id: 'colour.per-app-declared', line: 'val x = Color(0xFF9CCBFF)', want: /colour literal outside/ },
     { id: 'arch.result-not-exception', line: 'throw IllegalStateException("bad")', want: /expected failure thrown/ },
@@ -195,9 +194,19 @@ function run() {
       : bad(`--format ${format}: exit ${r.code}${r.err ? `, ${r.err.trim()}` : ''}`);
   }
 
+  // A theme composable, because type.m3-wrapper-present asks the whole app whether one
+  // exists — a fixture without it is not a compliant app, it is an app missing its theme.
+  const THEME_SRC =
+    'package com.x.y.ui.theme\n\nimport androidx.compose.runtime.Composable\n\n' +
+    '@Composable\nfun XTheme(content: @Composable () -> Unit) { }\n';
+
   // A clean app must exit 0, or the gate is not usable as a blocking check.
   const clean = fs.mkdtempSync(path.join(os.tmpdir(), 'kraft-lint-clean-'));
-  fs.mkdirSync(path.join(clean, 'app', 'src', 'main', 'java', 'com', 'x', 'y'), { recursive: true });
+  fs.mkdirSync(path.join(clean, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'ui', 'theme'), { recursive: true });
+  fs.writeFileSync(
+    path.join(clean, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'ui', 'theme', 'Theme.kt'),
+    THEME_SRC
+  );
   fs.writeFileSync(
     path.join(clean, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'Good.kt'),
     'package com.x.y\n\nimport com.kraft.ui.tokens.KraftSpacing\n\nval a = KraftSpacing.Medium\n'
@@ -271,7 +280,11 @@ function run() {
   // another program. Silent data loss, and it only happens when someone uses the thing.
   process.stdout.write('\noutput integrity through a pipe\n');
   const noisy = fs.mkdtempSync(path.join(os.tmpdir(), 'kraft-lint-noisy-'));
-  fs.mkdirSync(path.join(noisy, 'app', 'src', 'main', 'java', 'com', 'x', 'y'), { recursive: true });
+  fs.mkdirSync(path.join(noisy, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'ui', 'theme'), { recursive: true });
+  fs.writeFileSync(
+    path.join(noisy, 'app', 'src', 'main', 'java', 'com', 'x', 'y', 'ui', 'theme', 'Theme.kt'),
+    THEME_SRC
+  );
   fs.mkdirSync(path.join(noisy, 'app', 'src', 'main'), { recursive: true });
   fs.writeFileSync(path.join(noisy, 'settings.gradle.kts'),
     'rootProject.name = "fixture"\nincludeBuild("../kraft-foundation")\n');
@@ -303,6 +316,117 @@ function run() {
   fs.rmSync(mixed, { recursive: true, force: true });
   fs.rmSync(fixture, { recursive: true, force: true });
   fs.rmSync(clean, { recursive: true, force: true });
+
+  // Repo-scoped rules look at the tree rather than a line, so they need a directory to
+  // decide about. Each is probed in both directions: a tree that must be flagged, and one
+  // that must not. The second half matters as much as the first — a rule that fires
+  // unconditionally passes a "does it fire" test forever.
+  process.stdout.write('\nrepo-scoped rules\n');
+  const os2 = require('os');
+  const { readText, walk } = require('./kraft-lint');
+
+  // Real directories on disk, not a map of strings. An earlier version of this harness
+  // passed `readText: () => null` and a list of paths that did not exist, so three rules that
+  // read their inputs found nothing and appeared broken — a test that fails because its own
+  // fixtures are fiction is worse than no test, because it looks like a finding.
+  const mk = (files) => {
+    const d = fs.mkdtempSync(path.join(os2.tmpdir(), 'kraft-lint-repo-'));
+    for (const [rel, body] of Object.entries(files)) {
+      const p = path.join(d, rel);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, body);
+    }
+    return d;
+  };
+  const runRepo = (id, files) => {
+    const impl = RULES.find((r) => r.id === id);
+    if (!impl || typeof impl.repo !== 'function') return null;
+    const d = mk(files);
+    const list = walk(d);
+    const hits = [];
+    impl.repo({
+      appDir: d, files: list,
+      rel: (f) => path.relative(d, f).split(path.sep).join('/'),
+      readText, add: (ruleId, file, line, message) => hits.push({ rule: ruleId, file, line, message }),
+      byRule: new Map(),
+    });
+    fs.rmSync(d, { recursive: true, force: true });
+    return hits;
+  };
+
+  const THEME = '@Composable\nfun GitaKraftTheme(content: @Composable () -> Unit) { }\n';
+  const BARE = 'setContent { Box(Modifier.fillMaxSize()) }\n';
+
+  const m3Fire = runRepo('type.m3-wrapper-present', {
+    'app/src/main/java/com/x/y/MainActivity.kt': BARE,
+  });
+  m3Fire === null ? bad('type.m3-wrapper-present is not implemented')
+    : m3Fire.length === 1 ? ok('type.m3-wrapper-present fires on an app with no theme composable')
+    : bad('type.m3-wrapper-present missed an app with no theme composable');
+
+  // The regression this rule kept having: a wrapper named by the app rather than by Material,
+  // or applied one frame below MainActivity, is still a wrapper.
+  const m3Deep = runRepo('type.m3-wrapper-present', {
+    'app/src/main/java/com/x/y/MainActivity.kt': 'setContent { EnglishKraftApp(state = s) }\n',
+    'app/src/main/java/com/x/y/ui/App.kt': '@Composable fun EnglishKraftApp(state: S) {\n  EnglishKraftTheme { Home(state) }\n}\n',
+    'app/src/main/java/com/x/y/ui/theme/Theme.kt': THEME,
+  });
+  m3Deep === null ? bad('type.m3-wrapper-present is not implemented')
+    : m3Deep.length === 0 ? ok('type.m3-wrapper-present accepts a theme applied below MainActivity')
+    : bad('type.m3-wrapper-present flagged a correctly themed app');
+
+  // A theme that exists only in test sources is not a theme the app ships. Dropping the
+  // /src/main/ filter made this pass and nothing caught it — found by mutating the rule and
+  // then reading the probe list for what was missing.
+  const m3TestOnly = runRepo('type.m3-wrapper-present', {
+    'app/src/main/java/com/x/y/MainActivity.kt': BARE,
+    'app/src/test/java/com/x/y/ThemeTest.kt': THEME,
+  });
+  m3TestOnly === null ? bad('type.m3-wrapper-present is not implemented')
+    : m3TestOnly.length === 1 ? ok('type.m3-wrapper-present ignores a theme in test sources')
+    : bad('type.m3-wrapper-present accepted a theme that exists only in tests');
+
+  const sharedOk = runRepo('build.uses-shared-library', {
+    'settings.gradle.kts': 'rootProject.name = "x"\nincludeBuild("../kraft-foundation")\n',
+  });
+  sharedOk && sharedOk.length === 0
+    ? ok('build.uses-shared-library accepts an app that consumes the foundation')
+    : bad('build.uses-shared-library flagged a consuming app');
+
+  const sharedBad = runRepo('build.uses-shared-library', { 'settings.gradle.kts': 'rootProject.name = "x"\n' });
+  sharedBad && sharedBad.length === 1
+    ? ok('build.uses-shared-library fires on an app that does not')
+    : bad('build.uses-shared-library missed a non-consuming app');
+
+  // The foundation cannot consume itself, and reporting that made the repository defining the
+  // standard fail its own gate.
+  const sharedSelf = runRepo('build.uses-shared-library', {
+    'settings.gradle.kts': 'rootProject.name = "kraft-foundation"\n',
+    'kraft-ui/src/main/java/com/kraft/ui/Theme.kt': THEME,
+  });
+  sharedSelf && sharedSelf.length === 0
+    ? ok('build.uses-shared-library does not fire on the foundation itself')
+    : bad('build.uses-shared-library fired on the foundation itself');
+
+  // Only meaningful where the foundation's modules actually are. Hard-coding the module names
+  // made this fire on all nine apps — a finding no app can fix.
+  const libQuiet = runRepo('build.library-has-tests', { 'app/src/main/java/com/x/y/A.kt': 'class A\n' });
+  libQuiet && libQuiet.length === 0
+    ? ok('build.library-has-tests stays quiet on an app with no library modules')
+    : bad('build.library-has-tests fired on an app with no library modules');
+
+  const libMissing = runRepo('build.library-has-tests', { 'kraft-ui/src/main/java/com/kraft/ui/T.kt': 'class T\n' });
+  libMissing && libMissing.length === 1
+    ? ok('build.library-has-tests fires on an untested kraft-ui')
+    : bad('build.library-has-tests missed an untested kraft-ui');
+
+  const libOk = runRepo('build.library-has-tests', {
+    'kraft-ui/src/main/java/com/kraft/ui/T.kt': 'class T\n',
+    'kraft-ui/src/test/java/com/kraft/ui/TTest.kt': 'class TTest\n',
+  });
+  libOk && libOk.length === 0
+    ? ok('build.library-has-tests accepts a tested kraft-ui')
+    : bad('build.library-has-tests fired on a tested kraft-ui');
 
   process.stdout.write('\n' + '─'.repeat(64) + '\n');
   process.stdout.write(failures === 0
