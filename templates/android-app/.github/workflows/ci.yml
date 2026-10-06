@@ -1,0 +1,41 @@
+# The gate, and the tests, on every push.
+#
+# A gate that only runs locally is a gate that runs when you remember, and four apps in this
+# portfolio have no .github directory at all. Both steps block.
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The foundation is a sibling checkout because the app consumes it as a composite build.
+      # It is public, so no key is needed here — only trainkraft's older workflow still
+      # carries one, and it should be deleted.
+      - name: Checkout kraft-foundation
+        uses: actions/checkout@v4
+        with:
+          repository: kedharsairam/kraft-foundation
+          path: kraft-foundation
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # `quality.ci-runs-the-gate` fails if this step is removed.
+      - name: Quality gate
+        run: node kraft-foundation/tools/kraft-lint/kraft-lint.js . --format github
+
+      # `quality.ci-runs-tests` fails if this step is removed.
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Lint
+        run: ./gradlew lintDebug --no-daemon
