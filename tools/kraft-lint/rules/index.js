@@ -39,6 +39,21 @@ const isDefinition = (r) => IS_DEFINITION.test(r) || /KraftTokens\.kt$/.test(r);
  * would mean inventing `KraftSpacing.None`.
  */
 const notAbsent = (l) => l.value !== 0;
+
+/**
+ * Does this app consume the foundation as a composite build?
+ *
+ * Two questions need this, and both are the same mistake: a name that the rule cannot resolve
+ * in the app's own source may well be defined in kraft-ui, and reporting it would tell an app
+ * to inline something it is supposed to be sharing.
+ */
+function consumesFoundation(files, rel, readText) {
+  const settings = files.find((f) => /(^|\/)settings\.gradle(\.kts)?$/.test(rel(f)));
+  if (!settings) return false;
+  const text = readText(settings);
+  if (!text) return false;
+  return /includeBuild\s*\(/.test(text) && /kraft-foundation|kraft-ui/.test(text);
+}
 const ktMain = (r) => kt(r) && r.includes('/src/main/');
 
 /** Kotlin string literal, single or double quoted, non-greedy to the closing quote. */
@@ -247,18 +262,92 @@ const architecture = [
   },
   {
     id: 'type.scale-declared',
-    perFile: true,
-    appliesTo: (r) => ktMain(r) && /Theme\.kt$/.test(r),
-    check: ({ raw, line }) => {
-      // A bare Typography() means the stock Material scale, which is what englishkraft and
-      // pulsekraft do — the two apps that do not look like Kraft apps.
-      const out = [];
-      raw.split('\n').forEach((l, idx) => {
-        if (/typography\s*=\s*Typography\(\s*\)/.test(l)) {
-          out.push({ line: idx + 1, message: 'stock Typography(): this app inherits the Material type scale, not the Kraft one.' });
+    appliesTo: () => false,
+    // Asked of the whole app, because the question spans files: the theme composable names a
+    // Typography, and that Typography is defined somewhere else.
+    //
+    // The defect this exists for is englishkraft's, and the earlier version of this rule could
+    // not see it. englishkraft's theme is
+    //
+    //     MaterialTheme(colorScheme = KraftDark, content = content)
+    //
+    // — no typography argument at all. MaterialTheme falls back to the stock Material scale, so
+    // the app renders in Roboto's proportions rather than the Kraft type scale, and it passed a
+    // rule whose entire purpose was to catch that. Omitting the argument is a worse defect than
+    // passing the wrong one, because `Typography()` at least shows up when you read the file.
+    //
+    // Three cases, in order:
+    //   1. no `typography =` at all — silent fallback to the stock scale
+    //   2. `Typography()` — the stock scale, explicitly
+    //   3. a named Typography not built from KraftTypeScale — a scale of its own, which is
+    //      allowed, but only if it says so
+    repo: ({ files, rel, readText, add }) => {
+      const sources = files.filter((f) => /\/src\/main\//.test(rel(f)) && /\.kt$/i.test(rel(f)));
+      const contents = new Map();
+      for (const f of sources) {
+        const t = readText(f);
+        if (t) contents.set(rel(f), t);
+      }
+
+      for (const [file, text] of contents) {
+        if (!/fun\s+[A-Z]\w*Theme\s*\(/.test(text)) continue;
+
+        if (!/typography\s*=/.test(text)) {
+          add('type.scale-declared', file, 0,
+            'the theme composable passes no typography. MaterialTheme falls back to the stock ' +
+            'Material scale, so every MaterialTheme.typography.* in this app is Roboto ' +
+            'proportions rather than the Kraft scale, and nothing reports it.');
+          continue;
         }
-      });
-      return out;
+
+        if (/typography\s*=\s*Typography\s*\(\s*\)/.test(text)) {
+          add('type.scale-declared', file, 0,
+            'stock Typography(): this app inherits the Material type scale, not the Kraft one.');
+          continue;
+        }
+
+        const named = /typography\s*=\s*([A-Za-z]\w*(?:\s*\.\s*\w+)?)/.exec(text);
+        if (!named) continue;
+        const name = named[1].replace(/\s+/g, '');
+
+        // The reference may be qualified — wallkraft writes `KraftTypography.Typography` and
+        // holding the scale in an object is the natural way to do it. The lookup uses the
+        // property name, which resolves both shapes:
+        //     typography = XTypography            val XTypography = Typography(...)
+        //     typography = XType.Scale            object XType { val Scale = Typography(...) }
+        //
+        // An earlier version also allowed the *definition* to be written `Object.prop = ...`,
+        // which is not a thing Kotlin can express. It could not be exercised by any fixture,
+        // and two attempts to make a test for it passed with the clause deleted — a check that
+        // cannot fail is not coverage, so the clause is gone.
+        const prop = name.includes('.') ? name.split('.').pop() : name;
+        const decl = new RegExp('\\b' + prop + '\\s*(?::[^=]+)?=\\s*Typography\\s*\\(');
+        let defFile = null;
+        let defText = null;
+        for (const [f, t] of contents) {
+          if (decl.test(t)) { defFile = f; defText = t; break; }
+        }
+        if (!defText) {
+          // It may be defined in the foundation, which is where a shared scale belongs.
+          // wallkraft asks for `KraftTypography` and gets it from kraft-ui, and reporting that
+          // would be the rule telling an app to inline a scale it is supposed to be sharing —
+          // the exact opposite of what it is for. Only apps that consume the foundation get
+          // this exit; for anything else an unresolved name is worth a finding, because it
+          // would not compile anyway and this is where that surfaces first.
+          if (consumesFoundation(files, rel, readText)) continue;
+          add('type.scale-declared', file, 0,
+            'typography = ' + name + ', but nothing in main source defines ' + name +
+            ' as a Typography. This rule cannot verify it, so it is reported rather than assumed.');
+          continue;
+        }
+        if (!/KraftTypeScale/.test(defText)) {
+          add('type.scale-declared', defFile, 0,
+            name + ' is a type scale that does not reference KraftTypeScale. An app may keep its ' +
+            'own scale, but only by saying why; if this was meant to be the shared scale, build ' +
+            'it from the tokens instead of restating the numbers.');
+        }
+      }
+      return [];
     },
   },
 ];

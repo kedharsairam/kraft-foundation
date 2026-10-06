@@ -68,7 +68,6 @@ function run() {
     { id: 'spacing.no-raw-dp', line: 'Modifier.padding(6.dp)', want: /raw dp value/ },
     { id: 'spacing.rhythm', line: 'Modifier.height(13.dp)', want: /not on the 8px rhythm/ },
     { id: 'type.no-raw-sp', line: 'style.copy(fontSize = 17.sp)', want: /raw sp value/ },
-    { id: 'type.scale-declared', line: 'KraftTheme(typography = Typography())', want: /stock Typography/ },
     { id: 'radius.from-token', line: 'RoundedCornerShape(18.dp)', want: /not on the radius scale/ },
     { id: 'colour.per-app-declared', line: 'val x = Color(0xFF9CCBFF)', want: /colour literal outside/ },
     { id: 'arch.result-not-exception', line: 'throw IllegalStateException("bad")', want: /expected failure thrown/ },
@@ -194,11 +193,28 @@ function run() {
       : bad(`--format ${format}: exit ${r.code}${r.err ? `, ${r.err.trim()}` : ''}`);
   }
 
-  // A theme composable, because type.m3-wrapper-present asks the whole app whether one
-  // exists — a fixture without it is not a compliant app, it is an app missing its theme.
-  const THEME_SRC =
-    'package com.x.y.ui.theme\n\nimport androidx.compose.runtime.Composable\n\n' +
-    '@Composable\nfun XTheme(content: @Composable () -> Unit) { }\n';
+  // A compliant app: a theme composable that passes a Typography built from KraftTypeScale.
+  // type.m3-wrapper-present asks whether a theme exists; type.scale-declared asks whether it
+  // passes a type scale, and both of these fixtures now have to answer yes to both or the
+  // "a compliant tree exits 0" assertion means nothing.
+  const THEME_SRC = [
+    'package com.x.y.ui.theme',
+    '',
+    'import androidx.compose.material3.MaterialTheme',
+    'import androidx.compose.material3.Typography',
+    'import androidx.compose.runtime.Composable',
+    'import com.kraft.ui.tokens.KraftTypeScale',
+    '',
+    'private val XTypography = Typography(',
+    '    displayLarge = TextStyle(fontSize = KraftTypeScale.LargeTitle.value.sp),',
+    ')',
+    '',
+    '@Composable',
+    'fun XTheme(content: @Composable () -> Unit) {',
+    '    MaterialTheme(typography = XTypography, content = content)',
+    '}',
+    '',
+  ].join('\n');
 
   // A clean app must exit 0, or the gate is not usable as a blocking check.
   const clean = fs.mkdtempSync(path.join(os.tmpdir(), 'kraft-lint-clean-'));
@@ -515,6 +531,79 @@ function run() {
   inScreen.length === 2
     ? ok('the same literal twice in a screen is still 2 findings')
     : bad(`expected 2 findings for a repeated literal in a screen, got ${inScreen.length}`);
+
+  // type.scale-declared has to see three different failures and one success, and the success
+  // matters most: wallkraft holds its scale in an object and passes `KraftTypography.Typography`,
+  // and an earlier version captured only the first segment of that name and reported the one app
+  // in the portfolio that gets this right.
+  process.stdout.write('\nthe type scale, in all its forms\n');
+  const scaleRun = (files) => {
+    const d = mk(files);
+    const { standard } = loadStandard(null);
+    const res = run(d, standard);
+    fs.rmSync(d, { recursive: true, force: true });
+    return res.findings.filter((f) => f.rule === 'type.scale-declared');
+  };
+  const themeWith = (typography) =>
+    'package com.x.y.ui\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.material3.Typography\nimport androidx.compose.runtime.Composable\nimport com.kraft.ui.tokens.KraftTypeScale\n\n' +
+    'private val XTypography = Typography(displayLarge = TextStyle(fontSize = KraftTypeScale.LargeTitle.value.sp))\n\n' +
+    '@Composable\nfun XTheme(content: @Composable () -> Unit) {\n    MaterialTheme(\n        ' + typography + '\n        content = content,\n    )\n}\n';
+
+  scaleRun({ 'app/src/main/java/com/x/y/ui/Theme.kt': themeWith('typography = XTypography,') }).length === 0
+    ? ok('a theme built from KraftTypeScale passes')
+    : bad('a theme built from KraftTypeScale was reported');
+
+  const noArg = scaleRun({
+    'app/src/main/java/com/x/y/ui/Theme.kt':
+      'package com.x.y.ui\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.runtime.Composable\n\n' +
+      '@Composable\nfun XTheme(content: @Composable () -> Unit) {\n    MaterialTheme(content = content)\n}\n',
+  });
+  noArg.length === 1 && /passes no typography/.test(noArg[0].message)
+    ? ok('a theme that passes no typography at all is caught')
+    : bad(`a theme passing no typography was not caught: ${JSON.stringify(noArg.map((f) => f.message))}`);
+
+  const stock = scaleRun({ 'app/src/main/java/com/x/y/ui/Theme.kt': themeWith('typography = Typography(),') });
+  stock.length === 1 && /stock Typography/.test(stock[0].message)
+    ? ok('stock Typography() is caught')
+    : bad(`stock Typography() was not caught: ${JSON.stringify(stock.map((f) => f.message))}`);
+
+  // The scale lives in an object and is passed qualified — wallkraft's shape.
+  //
+  // The property is deliberately NOT called `Typography`. wallkraft happens to name it that, and
+  // a first version of this test did too, so it resolved through the bare property name and
+  // never exercised the qualifier: deleting `(?:Object\.)?` from the lookup changed nothing and
+  // this probe reported the code as covered when it was not.
+  const qualified = scaleRun({
+    'app/src/main/java/com/x/y/ui/Theme.kt':
+      'package com.x.y.ui\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.material3.Typography\nimport androidx.compose.runtime.Composable\nimport com.kraft.ui.tokens.KraftTypeScale\n\n' +
+      'object XType {\n    val Scale = Typography(displayLarge = TextStyle(fontSize = KraftTypeScale.LargeTitle.value.sp))\n}\n\n' +
+      '@Composable\nfun XTheme(content: @Composable () -> Unit) {\n    MaterialTheme(\n        typography = XType.Scale,\n        content = content,\n    )\n}\n',
+  });
+  qualified.length === 0
+    ? ok('a qualified name whose property is not named Typography resolves')
+    : bad(`a qualified typography name was reported: ${JSON.stringify(qualified.map((f) => f.message))}`);
+
+  // Its own scale, restated rather than taken from the tokens — langkraft, kalc, krafttools,
+  // gitakraft all do this, and it is a real finding rather than a false one.
+  const ownScale = scaleRun({
+    'app/src/main/java/com/x/y/ui/Theme.kt':
+      'package com.x.y.ui\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.material3.Typography\nimport androidx.compose.runtime.Composable\n\n' +
+      'private val XTypography = Typography(displayLarge = TextStyle(fontSize = 34.sp))\n\n' +
+      '@Composable\nfun XTheme(content: @Composable () -> Unit) {\n    MaterialTheme(\n        typography = XTypography,\n        content = content,\n    )\n}\n',
+  });
+  ownScale.length === 1 && /KraftTypeScale/.test(ownScale[0].message)
+    ? ok('a scale that restates the numbers instead of using the tokens is caught')
+    : bad(`a restated scale was not caught: ${JSON.stringify(ownScale.map((f) => f.message))}`);
+
+  // A name the app does not define, in an app that does not consume the foundation: unresolvable.
+  const unresolvable = scaleRun({
+    'app/src/main/java/com/x/y/ui/Theme.kt':
+      'package com.x.y.ui\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.runtime.Composable\n\n' +
+      '@Composable\nfun XTheme(content: @Composable () -> Unit) {\n    MaterialTheme(\n        typography = FromSomewhere,\n        content = content,\n    )\n}\n',
+  });
+  unresolvable.length === 1 && /cannot verify/.test(unresolvable[0].message)
+    ? ok('an unresolvable typography name is reported rather than assumed')
+    : bad(`an unresolvable name was not reported: ${JSON.stringify(unresolvable.map((f) => f.message))}`);
 
   process.stdout.write('\n' + '─'.repeat(64) + '\n');
   process.stdout.write(failures === 0
