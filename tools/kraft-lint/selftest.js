@@ -85,6 +85,27 @@ function run() {
     hit ? ok(`${p.id} fires`) : bad(`${p.id} did not fire on "${p.line}" (got ${JSON.stringify(out.map((f) => f.message))})`);
   }
 
+  // The generic credential heuristic skips test sources (fixtures assign fake credentials
+  // as a matter of course) while token formats stay active everywhere. wallkraft's
+  // SettingsViewModelTest was flagged for `apiKey = "existing-key"` on every run.
+  process.stdout.write('\nsecrets in test sources\n');
+  const secrets = RULES.find((r) => r.id === 'privacy.no-hardcoded-secrets');
+  const secretProbe = (file, body) => [].concat(
+    secrets.check({ raw: body, line: body, lineNo: 1, file, text: body, relPath: file, appDir: '.', readText: () => null }) || []
+  );
+  secretProbe('app/src/main/java/com/x/y/Thing.kt', 'val k = "ghp_' + 'a'.repeat(34) + '"').length === 1
+    ? ok('a GitHub token in main source is still caught')
+    : bad('a GitHub token in main source was missed');
+  secretProbe('app/src/test/java/com/x/y/ThingTest.kt', 'val k = "ghp_' + 'a'.repeat(34) + '"').length === 1
+    ? ok('a GitHub token in test source is still caught')
+    : bad('a GitHub token in test source was missed');
+  secretProbe('app/src/main/java/com/x/y/Thing.kt', 'val apiKey = "existing-key"').length === 1
+    ? ok('a credential literal in main source is still caught')
+    : bad('a credential literal in main source was missed');
+  secretProbe('app/src/test/java/com/x/y/ThingTest.kt', 'val apiKey = "existing-key"').length === 0
+    ? ok('a fixture credential in test source is not reported')
+    : bad('a fixture credential in test source was reported');
+
   // Domain purity needs the file path to carry /domain/, which the probes above do.
   const domain = RULES.find((r) => r.id === 'arch.domain-pure');
   if (domain) {

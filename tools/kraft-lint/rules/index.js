@@ -390,8 +390,10 @@ const privacy = [
     docs: true,
     perFile: true,
     appliesTo: (r) => /\.(kt|kts|properties|xml|json|md)$/i.test(r),
-    check: ({ raw }) => {
+    check: ({ raw, file }) => {
       const out = [];
+      // Token formats stay active everywhere, including tests: a pasted `ghp_` string is a
+      // real credential no matter which source set it sits in.
       const patterns = [
         [/ghp_[A-Za-z0-9]{30,}/, 'a GitHub token'],
         [/github_pat_[A-Za-z0-9_]{30,}/, 'a GitHub fine-grained token'],
@@ -399,8 +401,15 @@ const privacy = [
         [/\bAKIA[0-9A-Z]{16}\b/, 'an AWS access key id'],
         [/\bxox[baprs]-[A-Za-z0-9-]{10,}/, 'a Slack token'],
         [/\bAIza[0-9A-Za-z_-]{30,}/, 'a Google API key'],
-        [/(password|passwd|secret|api[_-]?key)\s*[:=]\s*["'][^"'\s]{8,}["']/i, 'a credential assigned a literal'],
       ];
+      // The generic `password = "literal"` heuristic skips test sources. Test fixtures
+      // assign obviously-fake credentials (`apiKey = "existing-key"`) as a matter of course,
+      // and flagging those teaches people the secret rule cries wolf — after which a real
+      // finding goes unread with the false ones. wallkraft's SettingsViewModelTest was the
+      // proof: flagged for a fixture, on every run, with no way to be clean.
+      if (!/\/src\/test\//.test(file || '')) {
+        patterns.push([/(password|passwd|secret|api[_-]?key)\s*[:=]\s*["'][^"'\s]{8,}["']/i, 'a credential assigned a literal']);
+      }
       for (const [re, what] of patterns) {
         if (re.test(raw)) out.push({ message: `possible ${what} in source.` });
       }
