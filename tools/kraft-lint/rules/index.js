@@ -276,13 +276,24 @@ const architecture = [
     // one broken app from the eight working ones: does a theme composable exist at all. It
     // will not catch an app that defines a theme and forgets to call it — which is visible in
     // review, and a far milder failure than having no theme to call.
+    //
+    // A theme may also be used without being defined: trainkraft calls the foundation's
+    // `KraftTheme(darkTheme = true)` directly and defines nothing of its own, which is the
+    // ideal end state rather than a violation. The rule accepts either.
     repo: ({ files, rel, readText, add }) => {
+      const inMain = (f) => /\/src\/main\//.test(rel(f)) && /\.kt$/i.test(rel(f));
       const definesTheme = files.some((f) => {
-        if (!/\/src\/main\//.test(rel(f)) || !/\.kt$/i.test(rel(f))) return false;
+        if (!inMain(f)) return false;
         const t = readText(f);
         return t !== null && /fun\s+[A-Z]\w*Theme\s*\(/.test(t);
       });
       if (definesTheme) return [];
+      const usesTheme = files.some((f) => {
+        if (!inMain(f)) return false;
+        const t = readText(f);
+        return t !== null && /\b[A-Z]\w*Theme\s*\(/.test(t);
+      });
+      if (usesTheme) return [];
       add('type.m3-wrapper-present', 'app/src/main/', 0,
         'no theme composable anywhere in main source. Every MaterialTheme.colorScheme and ' +
         'typography reference in this app resolves to Material defaults, and the app is ' +

@@ -489,6 +489,15 @@ function run() {
     : m3TestOnly.length === 1 ? ok('type.m3-wrapper-present ignores a theme in test sources')
     : bad('type.m3-wrapper-present accepted a theme that exists only in tests');
 
+  // A theme may be used without being defined: trainkraft calls the foundation's KraftTheme
+  // directly and defines nothing. That is the ideal end state, not a violation.
+  const m3Used = runRepo('type.m3-wrapper-present', {
+    'app/src/main/java/com/x/y/MainActivity.kt': 'setContent { KraftTheme(darkTheme = true) { App() } }\n',
+  });
+  m3Used === null ? bad('type.m3-wrapper-present is not implemented')
+    : m3Used.length === 0 ? ok('type.m3-wrapper-present accepts a used-but-undefined theme')
+    : bad('type.m3-wrapper-present flagged an app that uses the shared theme');
+
   const sharedOk = runRepo('build.uses-shared-library', {
     'settings.gradle.kts': 'rootProject.name = "x"\nincludeBuild("../kraft-foundation")\n',
   });
