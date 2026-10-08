@@ -95,3 +95,9 @@ in when it was three repositories.
 
 MIT. `docs/` and `standards/` are the part meant to be read by anyone; the library is the part
 that makes reading it cheap.
+
+## Support
+
+<p align="center">
+  <a href="https://buymeacoffee.com/kedhartech"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="182"></a>
+</p>
