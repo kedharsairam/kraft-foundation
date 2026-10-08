@@ -678,6 +678,37 @@ function run() {
     ? ok('a bare removal directive is not a permission request')
     : bad('a bare removal directive was reported as an unjustified permission');
 
+  // The comment must be about permissions, not merely near one. barokraft's manifest opens
+  // an eighteen-line block covering both permissions and the philosophy behind them; a
+  // layout comment at the same distance is not a justification.
+  const farBlock = '<manifest>\n  <!--\n    Two permissions, and neither is location.\n\n' +
+    '    INTERNET is for the forecast. ACCESS_NETWORK_STATE draws the offline line.\n' +
+    '    There is deliberately NO location permission.\n  -->\n' +
+    '  <uses-permission android:name="android.permission.INTERNET" />\n</manifest>\n';
+  manifestRun(farBlock).length === 0
+    ? ok('a long block naming the permission is accepted')
+    : bad('a long block naming the permission was rejected');
+
+  const farUnrelated = '<manifest>\n  <!--\n    The layout below is a placeholder.\n\n' +
+    '    It renders while data loads and is replaced wholesale.\n  -->\n' +
+    '  <meta-data android:name="x" />\n  <meta-data android:name="y" />\n' +
+    '  <meta-data android:name="z" />\n  <meta-data android:name="w" />\n' +
+    '  <meta-data android:name="v" />\n  <meta-data android:name="u" />\n' +
+    '  <uses-permission android:name="android.permission.INTERNET" />\n</manifest>\n';
+  manifestRun(farUnrelated).length === 1
+    ? ok('a distant comment that is not about permissions is still a finding')
+    : bad('an unrelated comment was accepted as a permission reason');
+
+  // ...while a comment directly above is accepted by position. wallkraft's five one-line
+  // reasons sit adjacent and say neither the word nor the name ("Wallhaven. There is no
+  // other destination.") — requiring content there broke all five, which is how the
+  // proximity half of the rule was found.
+  const adjacentTerse = '<manifest>\n  <!-- Wallhaven. There is no other destination. -->\n' +
+    '  <uses-permission android:name="android.permission.INTERNET" />\n</manifest>\n';
+  manifestRun(adjacentTerse).length === 0
+    ? ok('an adjacent reason is accepted by position')
+    : bad('an adjacent reason was rejected for not saying the word');
+
   // type.scale-declared has to see three different failures and one success, and the success
   // matters most: wallkraft holds its scale in an object and passes `KraftTypography.Typography`,
   // and an earlier version captured only the first segment of that name and reported the one app

@@ -471,11 +471,39 @@ const privacy = [
         // The declaration may wrap across lines; look back for a comment. Further back than
         // feels necessary, because the comment may sit above a sibling element — englishkraft's
         // justification covers both the <permission> and the <uses-permission>, and the two are
-        // separated by eleven lines of XML.
+        // separated by eleven lines of XML — or open a long block, like barokraft's eighteen
+        // lines covering both permissions and the philosophy behind them.
+        //
+        // But proximity alone is not enough at a distance: a layout comment eighteen lines
+        // up is not a justification. So a NEARBY comment (within a few lines) is accepted by
+        // position — it can only be about the declaration below it — while a DISTANT one has
+        // to prove relevance by naming the permission or saying the word. wallkraft's five
+        // one-line reasons sit directly above their permissions and say neither ("Wallhaven.
+        // There is no other destination."); barokraft's eighteen-line block names both.
+        // A first version required the word everywhere and broke all five wallkraft
+        // permissions, which is how the distinction was found.
         let j = idx - 1;
         let reason = null;
-        while (j >= 0 && j > idx - 14) {
-          if (/<!--/.test(lines[j])) { reason = lines.slice(j, idx + 1).join(' '); break; }
+        while (j >= 0 && j > idx - 22) {
+          if (/<!--/.test(lines[j])) {
+            if (idx - j <= 4) {
+              reason = lines.slice(j, idx + 1).join(' ');
+            } else {
+              let end = j;
+              while (end <= idx && !/-->/.test(lines[end])) end++;
+              const block = lines.slice(j, Math.min(end + 1, idx)).join(' ');
+              const perm = /android:name="([^"]+)"/.exec(l);
+              const permShort = perm ? perm[1].split('.').pop() : '';
+              // Compared alphanumeric-only and case-insensitive, because a reason written as
+              // prose says "tracking foreground service" where the manifest says
+              // FOREGROUND_SERVICE. Punctuation and case are not meaning.
+              const flat = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (/permission/i.test(block) || (permShort && flat(block).includes(flat(permShort)))) {
+                reason = block;
+              }
+            }
+            break;
+          }
           j--;
         }
         if (!reason) {
