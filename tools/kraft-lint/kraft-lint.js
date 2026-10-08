@@ -89,6 +89,12 @@ function loadStandard(explicit) {
 
 const SKIP_DIRS = new Set([
   'build', '.git', '.gradle', '.idea', 'node_modules', '.kotlin', 'captures', 'outputs',
+  // A nested foundation checkout. Apps whose Gradle root sits below the repository root
+  // (wallkraft: android/) check the foundation out beside it — inside the scanned tree —
+  // because their settings file can only address a sibling of the Gradle root. Scanning
+  // those sources as if they were the app's own would report the foundation's files
+  // against the app and confuse which settings file the shared-library rule reads.
+  'kraft-foundation',
 ]);
 
 function walk(dir, out = []) {
